@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<script type="text/javascript" src="wialon.js"></script>
+		<script type="text/javascript" src="jquery.js"></script>
+		<link rel="stylesheet" type="text/css" href="styles.css">
+	</head>
+	<body> 
+		Username: <input type="text" value="b3test_en" id="uname"/>
+		Password: <input type="password" value="test" id="pass"/><br/>
+		<input type="button" value="login" id="login_btn" />
+		<input type="button" value="logout" id="logout_btn" />
+		<input type="button" value="get user" id="user_btn" />
+		<div id="map"></div>
+		<div id="tools">
+			Select unit:<select id="units"><option></option></select>
+			<input type="button" value="Load messages for last 24 hours" id="load_btn"/><br/>
+			Show messages from <input type="text" id="show_from" value="0"/>
+			to <input type="text" id="show_to" value="100"/>
+			<input type="button" value="Show messages" id="show_btn"/>
+		</div>
+
+		<div class="wrap"><table id="messages"></table></div>
+		<div id="log"></div>
+	</body>
+	<script type="text/javascript">
+		var map, marker; // global variables
+
+		// Print message to log
+		function msg(text) { $("#log").prepend("<br/>" + text); }
+
+		// Login to server using entered username and password
+		function login() {
+		    var sess = wialon.core.Session.getInstance(); // get instance of current Session
+			var user = sess.getCurrUser(); // get current User
+			if( user ) { // if user exists - you are already logged, print username to log
+			    msg("You are logged as '" + user.getName()+"', click logout button first"); return; 
+		    }
+		  
+		    // if not logged
+			var uname = $("#uname").val(); // get username from input
+			var pass = $("#pass").val(); // get password from input
+			if( !uname ){ // if username is empty - print message to log
+			    msg("Enter username"); return;
+		    } 
+
+			msg("Trying to login as '"+ uname +"'");
+			sess.initSession("https://hst-api.wialon.com"); // initialize Wialon session
+			sess.login(uname, pass, "", // trying login 
+				function (code) { // login callback
+					if (code) msg(wialon.core.Errors.getErrorText(code)); // login failed, print error
+					else {
+						msg("Logged successfully"); // login succeed
+						init();
+					}
+				}
+			);
+		}
+
+		// Logout
+		function logout() {
+			var user = wialon.core.Session.getInstance().getCurrUser(); // get current user
+			if (!user){ msg("You are not logged, click 'login' button"); return; } 
+			wialon.core.Session.getInstance().logout( // if user exist - logout
+				function (code) { // logout callback
+					if (code) msg(wialon.core.Errors.getErrorText(code)); // logout failed, print error
+					else msg("Logout successfully"); // logout suceed
+				}
+			);
+		}
+
+		// Get current user and prints its name to log
+		function getUser() {
+			var user = wialon.core.Session.getInstance().getCurrUser(); // get current user
+		    // print message 
+			if (!user) msg("You are not logged, click 'login' button"); // user not exists
+			else msg("You are logged as '" + user.getName() + "'"); // print current user name
+		}
+
+		function initMap() { 
+		// initialize Google maps, execute after script loaded
+		// for additionsl info about Custom map types see link below 
+		// https://developers.google.com/maps/documentation/javascript/maptypes#MapTypeInterface
+			function GurtamMapsType() {}; // Gurtam map type variable
+			GurtamMapsType.prototype.tileSize = new google.maps.Size(256, 256); // specify size of the tile
+			// specify maximum zoom level at which to display tiles of Gurtam map
+			GurtamMapsType.prototype.maxZoom = 17;
+			GurtamMapsType.prototype.name = "Gurtam"; // specify the name for Gurtam map type
+		    // specify alternate text for Gurtam map type, exhibited as hover text
+			GurtamMapsType.prototype.alt = "Gurtam Maps";
+			// getTile() is called when API determines that map needs to display new tiles
+			GurtamMapsType.prototype.getTile = function(coord, zoom, ownerDocument) { //
+				var url = "http://render.mapsviewer.com/hst-api.wialon.com/gis_render/"+
+					coord.x + "_" + coord.y + "_" + (this.maxZoom-zoom) + "/tile.png";
+				var img = ownerDocument.createElement("IMG"); // create <img> tile element
+				img.src = url; // specify source of tile
+				img.style.width = this.tileSize.width + "px"; // specify width of tile
+				img.style.height = this.tileSize.height + "px"; // specify height of tile
+				img.style.border = "0px"; // hide border
+				return img; // return tile
+			};
+			
+			var options = { // map options
+				zoom: 6, // specify initial zoom level of the map
+				minZoom: 4, // specify minimal zoom level of the map
+				center: new google.maps.LatLng(53.8, 27.5), // specify initial center point of the map
+				mapTypeId: "gurtammaps", // specify initial map type
+				mapTypeControlOptions: { // control options
+				    // specify list of available map types
+					mapTypeIds: [google.maps.MapTypeId.ROADMAP, google.maps.MapTypeId.SATELLITE, "gurtammaps"],
+					// specify style of control
+					style: google.maps.MapTypeControlStyle.DROPDOWN_MENU
+				}
+			};
+			// create new Map instance and specify HTML container for this map
+			map = new google.maps.Map(document.getElementById("map"), options);
+			var gurtam = new GurtamMapsType(); // create new instance of GurtamMap
+			map.mapTypes.set("gurtammaps", gurtam); // add GurtamMap to earlier created map object
+		}
+
+		function init() { // Execute after login succeed
+			var sess = wialon.core.Session.getInstance(); // get instance of current Session
+			// specify what kind of data should be returned
+			var flags = wialon.item.Item.dataFlag.base | wialon.item.Unit.dataFlag.lastMessage;
+
+			sess.loadLibrary("itemIcon"); // load Icon Library 
+			sess.updateDataFlags( // load items to current session
+			    [{type: "type", data: "avl_unit", flags: flags,mode: 0}], // Items specification
+			    function (code) { // updateDataFlags callback
+				    if (code) { msg(wialon.core.Errors.getErrorText(code)); return; } // exit if error code
+					
+				    var units = sess.getItems("avl_unit"); // get loaded 'avl_resource's items
+				    if (!units || !units.length){ msg("No units found"); return; } // check if units found
+				    for (var i = 0; i< units.length; i++) // construct Select list using found resources
+					    $("#units").append("<option value='"+ units[i].getId() +"'>"+ units[i].getName()+ "</option>");
+				    // bind action to select change event
+				    $("#units").change( showUnit );
+				    initData();
+			});
+		}
+
+		function initData() { // Execute after items load to Session
+			var sess = wialon.core.Session.getInstance(); // get instance of current Session
+			var units = sess.getItems("avl_unit"); // get loaded 'avl_unit's items  
+			if (!units || !units.length){ msg("Units not found"); return; } // check if units found
+		        
+			for (var i=0; i<units.length; i++) // construct Select object using found units
+				// append option with current unit to select
+				$("#units").append("<option value='" + units[i].getId() + "'>" + units[i].getName() + "</option>");
+		}
+
+		function loadMessages(){ // load messages function
+			var sess = wialon.core.Session.getInstance(); // get instance of current Session	
+			var to = sess.getServerTime(); // get ServerTime, it will be end time
+			var from = to - 3600*24; // get begin time ( end time - 24 hours in seconds )
+			
+			var unit = $("#units").val(); // get selected unit id
+			if(!unit){ msg("Select unit first"); return; } // exit if no unit selected
+			var ml = sess.getMessagesLoader(); // get messages loader object for current session
+			ml.loadInterval(unit, from, to, 0, 0, 100, // load messages for given time interval
+			    function(code, data){ // loadInterval callback
+				    if(code){ msg(wialon.core.Errors.getErrorText(code)); return; } // exit if error code
+		    		else { msg(data.count +" messages loaded. Click 'Show messages'");} // print success message 
+			    }
+		    );
+		}
+
+		function showMessages(from, to){ // print given indicies (from, to) of messages 
+			$("#messages").html(""); // clear message container
+			// get messages loader object for current session
+			var ml = wialon.core.Session.getInstance().getMessagesLoader(); 
+			ml.getMessages(from, to, //get messages data for given indicies
+			    function(code, data){ // getMessages callback
+				    if(code){ msg(wialon.core.Errors.getErrorText(code)); return; } // exit if error code
+				    else if(data.length == 0){ // exit if no messages loaded
+				        msg("Nothing to show. Load messages first"); return;}
+			        var from_index = from; // counter for display
+			        for(var i=0; i<data.length; i++) // display result cycle
+				        $("#messages").append( // append current message row to result table
+					        "<tr"+ (i%2==1?" class='odd' ":"") +"><td>"+ (from_index++) +"</td>"+
+					        // print Json data of current message
+					        "<td>"+wialon.util.Json.stringify(data[i])+"</td></tr>"); 
+			        msg(data.length + " messages shown from "+ from+" to "+ to); // Print message to log
+			    }
+		    );
+		}
+
+		function showUnit(){ // show selected unit on map
+			var val = $("#units").val(); // get selected unit id
+			if(!val) return; // exit if no unit selected
+			var unit = wialon.core.Session.getInstance().getItem(val); // get unit by id
+			if(!unit) return; // exit if no unit
+			var pos = unit.getPosition(); // get unit position
+			if(!pos) return; // exit if no position 
+		    // print message with information about selected unit and its position
+			msg("<img src='"+ unit.getIconUrl(32) +"'/> " + unit.getName()+" selected. Position "+ pos.x+", "+pos.y);
+
+			if (map) { // check if map created
+		    	// create LatLng object with object location
+				var latlon = new google.maps.LatLng(pos.y, pos.x);
+				var icon = new google.maps.MarkerImage( // create new instance of MarkerImage
+					unit.getIconUrl(32), // marker image (same as unit icon)
+					new google.maps.Size(32, 32), // marker size
+					new google.maps.Point(0,0), // origin for image
+					new google.maps.Point(16, 16) // anchor for image (center of icon)
+				);
+				if(marker) marker.setMap(null); // if there is alreday marker of map - remove it
+				marker = new google.maps.Marker({ // create new Marker instance
+					position: latlon, // marker position (same as unit position)
+					icon: icon, // MarkerImage object defined above
+					title: unit.getName(), // marker title
+					zIndex: 10, // marker zIndex 
+					map: map // Map object on which to place the marker
+				});
+				map.setCenter(latlon); // set map center to unit location
+			}
+		}
+		// execute when DOM ready
+		$(document).ready(function() {
+			// asynchronously load google maps API, after loading call initMap() function
+			var script = document.createElement("script");
+		  	script.type = "text/javascript";
+		  	script.src = "http://maps.googleapis.com/maps/api/js?sensor=false&callback=initMap";
+		  	document.body.appendChild(script);
+
+		  	//auto-login with credentials
+		  	/*wialon.core.Session.getInstance().initSession("https://hst-api.wialon.com"); // init session
+			wialon.core.Session.getInstance().login("Gurtam Partner", "partner", "", // try to login
+				function (code) { // login callback
+				    // if error code - print error message
+					if (code){ msg(wialon.core.Errors.getErrorText(code)); return; }
+					msg("Logged successfully"); init(); // when login suceed then run init() function
+			});*/
+			
+
+		    // bind actions to buttons click
+			$("#login_btn").click( login );
+			$("#logout_btn").click( logout );
+			$("#user_btn").click( getUser );
+			$("#load_btn").click( loadMessages );
+			$("#show_btn").click( function(){ showMessages($("#show_from").val(),$("#show_to").val()); } );
+
+		});
+
+	</script>
+</html>
