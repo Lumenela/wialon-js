@@ -9245,7 +9245,7 @@ qx.$$packageData['0']={"locales":{},"resources":{},"translations":{"C":{}}};
 })();
 (function(){
 
-  var k = "singleton",j = "wialon.core.Remote",h = "error",g = "/gis_post?1",f = "abort",e = "&sid=",d = "//",c = ":",b = "core/batch",a = "/gis_geocode",x = "/wialon/ajax.html",w = "/gis_search",v = "success",u = "statusError",t = "/gis_post?2",s = "/wialon/ajax.html?svc=",r = "timeout",q = "object",p = "sdk",o = "geocode",m = "search",n = "undefined",l = "";
+  var k = "singleton",j = "wialon.core.Remote",h = "error",g = "/gis_post?1",f = "abort",e = "&sid=",d = "//",c = ":",b = "core/batch",a = "/gis_geocode",x = "/wialon/post.html",w = "/gis_search",v = "success",u = "statusError",t = "/gis_post?2",s = "/wialon/ajax.html?svc=",r = "timeout",q = "object",p = "sdk",o = "geocode",m = "search",n = "undefined",l = "";
   qx.Class.define(j, {
     extend : qx.core.Object,
     type : k,
